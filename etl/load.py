@@ -35,41 +35,33 @@ def format_worksheet(worksheet):
 
 
 # 2. CREATE EXCEL REPORT
-
-def create_excel_report(
-    report,
-    summary,
-    summary_operator,
-):
-    """Membuat workbook Excel dengan tiga sheet laporan."""
+def create_excel_report(report, summary):
+    """Membuat file Excel dengan sheet Sheet1 dan SUMMARY."""
     buffer = BytesIO()
 
     with pd.ExcelWriter(
         buffer,
         engine="openpyxl",
     ) as writer:
+        # Export laporan utama.
         report.to_excel(
             writer,
             sheet_name="Sheet1",
             index=False,
         )
 
+        # Export ringkasan laporan.
         summary.to_excel(
             writer,
             sheet_name="SUMMARY",
             index=False,
         )
 
-        summary_operator.to_excel(
-            writer,
-            sheet_name="SUMMARY OPERATOR",
-            index=False,
-        )
-
+        # Format seluruh worksheet.
         for worksheet in writer.book.worksheets:
             format_worksheet(worksheet)
 
+    # Kembalikan file Excel sebagai bytes.
     buffer.seek(0)
 
     return buffer.getvalue()
-
