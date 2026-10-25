@@ -8,8 +8,13 @@ from etl.extract import (
     read_user_workbook,
     read_source_file,
 )
-from etl.transform import build_report, summarize_report
+from etl.transform import (
+    build_report,
+    summarize_report,
+    summarize_operator,
+)
 from etl.load import create_excel_report
+
 
 
 # 1. PAGE CONFIGURATION
@@ -186,10 +191,16 @@ if st.button(
                 int(year),
             )
 
+            # Generate summary operator or provider
+            summary_operator = summarize_operator(
+                report
+            )
+
             # Export report and summary to Excel
             excel_file = create_excel_report(
                 report,
                 summary,
+                summary_operator,
             )
 
         # 5.3 Display results
@@ -237,6 +248,15 @@ if st.button(
             use_container_width=True,
             hide_index=True,
         )
+
+        st.subheader("Preview SUMMARY OPERATOR")
+
+        st.dataframe(
+            summary_operator,
+            width="stretch"
+            hide_index=True,
+        )
+        
 
         # 5.5 Download Excel report
         file_name = (

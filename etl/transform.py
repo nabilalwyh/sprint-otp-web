@@ -306,3 +306,92 @@ def summarize_report(
     )
 
     return summary
+
+
+# 8. BUILD OPERATOR SUMMARY
+def summarize_operator(report):
+    """
+    Menyiapkan struktur summary traffic berdasarkan operator
+    dan negara.
+
+    Catatan:
+    Klasifikasi Premium/Reguler dan tarif perlu mengikuti
+    mapping bisnis yang telah ditentukan.
+    """
+    operator_columns = [
+        "Operator",
+        "Traffic Premium",
+        "Traffic Reguler",
+        "Price Premium",
+        "Price Reguler",
+        "Grand Total",
+    ]
+
+    # Daftar operator dan negara sesuai format laporan.
+    operators = [
+        "Email",
+        "Excelcom",
+        "Hutchinson",
+        "Indosat",
+        "Smartfren",
+        "Telkomsel",
+        "Azerbaijan",
+        "Hong Kong",
+        "Japan",
+        "Laos",
+        "Macao",
+        "Malaysia",
+        "Saudi Arabia",
+        "Singapore",
+        "South Korea",
+        "Sri Lanka",
+        "Taiwan",
+        "Thailand",
+        "Turkey",
+        "United States",
+        "Wallis and Futuna",
+    ]
+
+    rows = []
+
+    for operator in operators:
+        rows.append(
+            {
+                "Operator": operator,
+                "Traffic Premium": 0,
+                "Traffic Reguler": 0,
+                "Price Premium": 0,
+                "Price Reguler": 0,
+                "Grand Total": 0,
+            }
+        )
+
+    rows.append(
+        {
+            "Operator": "GRAND TOTAL",
+            "Traffic Premium": 0,
+            "Traffic Reguler": 0,
+            "Price Premium": None,
+            "Price Reguler": None,
+            "Grand Total": 0,
+        }
+    )
+
+    summary_operator = pd.DataFrame(
+        rows,
+        columns=operator_columns,
+    )
+
+    # Catatan harga.
+    summary_operator.loc[
+        len(summary_operator)
+    ] = {
+        "Operator": "^harga belum termasuk pajak",
+        "Traffic Premium": None,
+        "Traffic Reguler": None,
+        "Price Premium": None,
+        "Price Reguler": None,
+        "Grand Total": None,
+    }
+
+    return summary_operator
