@@ -21,7 +21,7 @@ st.set_page_config(
 
 st.title("Generate Sprint OTP Report")
 st.caption(
-    "Mencocokkan laporan Sprint dengan data pendukung divisi."
+    "DIB - BMI"
 )
 
 
