@@ -253,7 +253,7 @@ if st.button(
 
         st.dataframe(
             summary_operator,
-            width="stretch"
+            width="stretch",
             hide_index=True,
         )
         
