@@ -11,8 +11,8 @@
 
 ## Menjalankan di Windows dengan venv bmi2
 ```powershell
-py -m venv bmi2
-.\bmi2\Scripts\Activate.ps1
+py -m venv test
+.\test\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 python -m streamlit run app.py
