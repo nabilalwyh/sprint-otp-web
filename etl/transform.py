@@ -1,4 +1,3 @@
-
 """Normalisasi primary key dan pencocokan indikator pada tahap Transform ETL."""
 
 import re
@@ -48,6 +47,7 @@ def normalize_phone(value):
     Contoh:
     - 628123456789  -> 8123456789
     - 08123456789   -> 8123456789
+    - +628123456789 -> 8123456789
     - 8123456789    -> 8123456789
     """
     if pd.isna(value):
@@ -72,11 +72,11 @@ def normalize_phone(value):
     # Hanya mempertahankan karakter angka.
     digits = re.sub(r"\D", "", text)
 
-    # Menghapus awalan nomor Indonesia.
+    # Menghapus awalan 0 / 62 (nomor HP Indonesia selalu berawalan 8).
+    digits = digits.lstrip("0")
+
     if digits.startswith("62"):
-        digits = digits[2:]
-    elif digits.startswith("0"):
-        digits = digits[1:]
+        digits = digits[2:].lstrip("0")
 
     return digits
 
@@ -92,9 +92,7 @@ def get_pk_column(df, expected, label):
     expected_column = expected.strip().lower()
 
     if expected_column not in column_lookup:
-        available_columns = ", ".join(
-            map(str, df.columns)
-        )
+        available_columns = ", ".join(map(str, df.columns))
 
         raise ValueError(
             f"PK '{expected}' tidak ditemukan pada {label}. "
@@ -116,15 +114,9 @@ def normalized_phone_set(df, pk, label):
         label=label,
     )
 
-    normalized_values = df[pk_column].map(
-        normalize_phone
-    )
+    normalized_values = df[pk_column].map(normalize_phone)
 
-    return {
-        phone
-        for phone in normalized_values
-        if phone
-    }
+    return {phone for phone in normalized_values if phone}
 
 
 # 5. BUILD SOURCE LOOKUPS
@@ -137,50 +129,32 @@ def build_source_lookups(
     hajj_df,
 ):
     """Membuat lookup nomor HP unik untuk setiap kategori."""
-    sources = {
+    return {
         "MDINSUCCESS": normalized_phone_set(
-            user_sheets["MDIN"],
-            "PHONE",
-            "sheet MDIN",
+            user_sheets["MDIN"], "PHONE", "sheet MDIN"
         ),
         "MDINREG": normalized_phone_set(
-            mdinreg_df,
-            "phone",
-            "MDINREG",
+            mdinreg_df, "phone", "MDINREG"
         ),
         "MDINREGNOPAN": normalized_phone_set(
-            mdinregnopan_df,
-            "phone",
-            "MDINREGNOPAN",
+            mdinregnopan_df, "phone", "MDINREGNOPAN"
         ),
         "COB": normalized_phone_set(
-            cob_df,
-            "MOBILE_NUMBER",
-            "COB",
+            cob_df, "MOBILE_NUMBER", "COB"
         ),
         "COB_MITRA": normalized_phone_set(
-            cobmitra_df,
-            "phone",
-            "COBMITRA",
+            cobmitra_df, "phone", "COBMITRA"
         ),
         "HAJJ": normalized_phone_set(
-            hajj_df,
-            "phone",
-            "HAJJ",
+            hajj_df, "phone", "HAJJ"
         ),
         "IB": normalized_phone_set(
-            user_sheets["IB"],
-            "NO_HP",
-            "sheet IB",
+            user_sheets["IB"], "NO_HP", "sheet IB"
         ),
         "MQRIS": normalized_phone_set(
-            user_sheets["MQRIS"],
-            "PHONE",
-            "sheet MQRIS",
+            user_sheets["MQRIS"], "PHONE", "sheet MQRIS"
         ),
     }
-
-    return sources
 
 
 # 6. BUILD SPRINT REPORT
@@ -219,9 +193,9 @@ def build_report(
         raise ValueError(
             "Kolom Sprint tidak ditemukan: "
             + ", ".join(missing_columns)
+            + f". Kolom yang terbaca: {list(sprint.columns)}"
         )
 
-    # Mempertahankan urutan kolom A-Q yang ditentukan.
     original_columns = [
         column_lookup[column.lower()]
         for column in SPRINT_COLUMNS
@@ -241,17 +215,16 @@ def build_report(
     )
 
     # 6.3 Normalize Sprint recipient
-    sprint["HP_CUT"] = sprint["recipient"].map(
-        normalize_phone
-    )
+    sprint["HP_CUT"] = sprint["recipient"].map(normalize_phone)
 
     # 6.4 Match phone numbers against each source
-    for indicator, source_phones in sources.items():
-        sprint[indicator] = sprint["HP_CUT"].map(
-            lambda phone: int(
-                bool(phone) and phone in source_phones
-            )
-        ).astype("int64")
+    # (set tidak berisi string kosong, jadi HP_CUT kosong otomatis = 0)
+    for indicator in INDICATORS:
+        sprint[indicator] = (
+            sprint["HP_CUT"]
+            .isin(sources[indicator])
+            .astype("int64")
+        )
 
     # 6.5 Calculate total matches per Sprint row
     sprint["TOTAL"] = sprint[INDICATORS].sum(axis=1)
@@ -268,12 +241,7 @@ def build_report(
 
 
 # 7. BUILD SUMMARY
-def summarize_report(
-    report,
-    diagnostics,
-    month,
-    year,
-):
+def summarize_report(report, diagnostics, month, year):
     """Membuat ringkasan jumlah match per kategori."""
     period = f"{month_name[month]} {year}"
 
@@ -288,7 +256,6 @@ def summarize_report(
         for indicator in INDICATORS
     ]
 
-    # Total seluruh match dari delapan indikator.
     rows.append(
         {
             "Kategori": "TOTAL",
@@ -298,13 +265,6 @@ def summarize_report(
     )
 
     summary = pd.DataFrame(rows)
-
-    summary.insert(
-        0,
-        "Periode",
-        period,
-    )
+    summary.insert(0, "Periode", period)
 
     return summary
-
-
