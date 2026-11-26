@@ -2,20 +2,17 @@
 """Membaca file upload pada tahap Extract ETL."""
 
 from io import BytesIO
+import zipfile
 
 import pandas as pd
 
 
 # =========================================================
-# 1. DETECT EXCEL FILE FORMAT
+# 1. GET FILE CONTENT
 # =========================================================
-def detect_excel_engine(file):
-    """
-    Mendeteksi format Excel berdasarkan signature file.
-
-    XLSX menggunakan format ZIP.
-    XLS menggunakan format OLE Compound Document.
-    """
+def get_file_bytes(file):
+    """Mengambil isi file upload dalam bentuk bytes."""
+    file.seek(0)
     file_bytes = file.getvalue()
 
     if not file_bytes:
@@ -23,65 +20,88 @@ def detect_excel_engine(file):
             f"File '{file.name}' kosong."
         )
 
+    return file_bytes
+
+
+# =========================================================
+# 2. DETECT EXCEL FILE FORMAT
+# =========================================================
+def detect_excel_engine(file):
+    """
+    Mendeteksi format Excel berdasarkan struktur file.
+
+    XLSX menggunakan struktur ZIP.
+    XLS menggunakan OLE Compound Document.
+    """
+    file_bytes = get_file_bytes(file)
+
+    # Check XLSX format.
+    try:
+        with BytesIO(file_bytes) as buffer:
+            if zipfile.is_zipfile(buffer):
+                return "openpyxl", "XLSX"
+    except Exception:
+        pass
+
+    # Check XLS format.
     signature = file_bytes[:8]
 
-    # XLSX signature
-    if signature.startswith(b"PK"):
-        return "openpyxl", "XLSX"
-
-    # XLS signature
     if signature.startswith(b"\xD0\xCF\x11\xE0"):
         return "xlrd", "XLS"
 
     raise ValueError(
-        f"File '{file.name}' bukan workbook Excel yang valid "
-        "atau formatnya tidak dikenali.\n"
+        f"Format internal file '{file.name}' tidak dikenali.\n"
         f"Ukuran file: {len(file_bytes):,} bytes.\n"
         f"Signature: {signature.hex(' ')}.\n"
-        "Silakan buka file menggunakan Microsoft Excel "
-        "dan simpan ulang sebagai Excel Workbook (*.xlsx)."
+        "Pastikan file merupakan workbook Excel yang valid "
+        "dan tidak rusak."
     )
 
 
 # =========================================================
-# 2. READ GENERAL FILE
+# 3. READ GENERAL FILE
 # =========================================================
 def read_table(file):
     """Membaca file CSV atau Excel menjadi DataFrame."""
 
     file_name = file.name.lower()
-    file.seek(0)
+    file_bytes = get_file_bytes(file)
 
     try:
+        # -------------------------------------------------
         # Read CSV
+        # -------------------------------------------------
         if file_name.endswith(".csv"):
             try:
-                return pd.read_csv(
-                    file,
+                df = pd.read_csv(
+                    BytesIO(file_bytes),
                     dtype=object,
                     sep=None,
                     engine="python",
                 )
 
             except Exception:
-                file.seek(0)
-
-                return pd.read_csv(
-                    file,
+                # Fallback menggunakan delimiter default.
+                df = pd.read_csv(
+                    BytesIO(file_bytes),
                     dtype=object,
                 )
 
+            return df
+
+        # -------------------------------------------------
         # Read Excel
+        # -------------------------------------------------
         if file_name.endswith((".xlsx", ".xls")):
             engine, detected_format = detect_excel_engine(file)
 
-            file_bytes = file.getvalue()
-
-            return pd.read_excel(
+            df = pd.read_excel(
                 BytesIO(file_bytes),
                 dtype=object,
                 engine=engine,
             )
+
+            return df
 
         raise ValueError(
             f"Format file tidak didukung: {file.name}"
@@ -95,25 +115,41 @@ def read_table(file):
 
 
 # =========================================================
-# 3. READ SPRINT REPORT
+# 4. CLEAN COLUMN NAMES
+# =========================================================
+def clean_column_names(df):
+    """Membersihkan spasi pada nama kolom DataFrame."""
+    df.columns = [
+        str(column).strip()
+        for column in df.columns
+    ]
+
+    return df
+
+
+# =========================================================
+# 5. READ SPRINT REPORT
 # =========================================================
 def read_sprint_file(file):
     """Membaca laporan Sprint hanya dari kolom A sampai Q."""
 
     file_name = file.name.lower()
+    file_bytes = get_file_bytes(file)
 
     try:
-        file.seek(0)
-
-        # Read CSV: mengambil maksimal 17 kolom pertama.
+        # -------------------------------------------------
+        # Read CSV: first 17 columns
+        # -------------------------------------------------
         if file_name.endswith(".csv"):
-            df = read_table(file).iloc[:, :17]
+            df = read_table(file)
 
-        # Read Excel: mengambil kolom A sampai Q.
+            df = df.iloc[:, :17]
+
+        # -------------------------------------------------
+        # Read Excel: columns A-Q
+        # -------------------------------------------------
         elif file_name.endswith((".xlsx", ".xls")):
             engine, detected_format = detect_excel_engine(file)
-
-            file_bytes = file.getvalue()
 
             df = pd.read_excel(
                 BytesIO(file_bytes),
@@ -127,13 +163,7 @@ def read_sprint_file(file):
                 f"Format file tidak didukung: {file.name}"
             )
 
-        # Clean column names.
-        df.columns = [
-            str(column).strip()
-            for column in df.columns
-        ]
-
-        return df
+        return clean_column_names(df)
 
     except Exception as error:
         raise ValueError(
@@ -143,7 +173,7 @@ def read_sprint_file(file):
 
 
 # =========================================================
-# 4. READ USER MB WORKBOOK
+# 6. READ USER MB WORKBOOK
 # =========================================================
 def read_user_workbook(file):
     """
@@ -155,13 +185,25 @@ def read_user_workbook(file):
     - MQRIS : PHONE
     """
 
+    file_bytes = get_file_bytes(file)
+
+    # -----------------------------------------------------
+    # Detect workbook format
+    # -----------------------------------------------------
     try:
-        # Detect actual Excel format.
         engine, detected_format = detect_excel_engine(file)
 
-        file_bytes = file.getvalue()
+    except Exception as error:
+        raise ValueError(
+            f"Gagal mendeteksi format workbook User MB "
+            f"'{file.name}'.\n"
+            f"Detail: {error}"
+        ) from error
 
-        # Read workbook sheet names.
+    # -----------------------------------------------------
+    # Open workbook
+    # -----------------------------------------------------
+    try:
         excel_file = pd.ExcelFile(
             BytesIO(file_bytes),
             engine=engine,
@@ -170,11 +212,13 @@ def read_user_workbook(file):
     except Exception as error:
         raise ValueError(
             f"Gagal membuka workbook User MB '{file.name}'.\n"
-            f"Format terdeteksi: {locals().get('detected_format', 'Tidak diketahui')}.\n"
-            f"Ukuran file: {len(file.getvalue()):,} bytes.\n"
+            f"Format terdeteksi: {detected_format}.\n"
+            f"Ukuran file: {len(file_bytes):,} bytes.\n"
             f"Detail error: {error}\n\n"
-            "Pastikan file tidak rusak, tidak terenkripsi password, "
-            "dan sudah disimpan dalam format Excel yang valid."
+            "Kemungkinan penyebab:\n"
+            "- File Excel rusak atau tidak lengkap.\n"
+            "- File dilindungi password/enkripsi.\n"
+            "- Format internal file tidak sesuai."
         ) from error
 
     # -----------------------------------------------------
@@ -216,13 +260,7 @@ def read_user_workbook(file):
                 engine=engine,
             )
 
-            # Clean column names.
-            df.columns = [
-                str(column).strip()
-                for column in df.columns
-            ]
-
-            result[sheet_name] = df
+            result[sheet_name] = clean_column_names(df)
 
         except Exception as error:
             raise ValueError(
@@ -235,7 +273,7 @@ def read_user_workbook(file):
 
 
 # =========================================================
-# 5. READ SUPPORTING DATA
+# 7. READ SUPPORTING DATA
 # =========================================================
 def read_source_file(file):
     """Membaca file data pendukung dan merapikan nama kolom."""
@@ -243,16 +281,11 @@ def read_source_file(file):
     try:
         df = read_table(file)
 
-        # Clean column names.
-        df.columns = [
-            str(column).strip()
-            for column in df.columns
-        ]
-
-        return df
+        return clean_column_names(df)
 
     except Exception as error:
         raise ValueError(
-            f"Gagal membaca file data pendukung '{file.name}'.\n"
+            f"Gagal membaca file data pendukung "
+            f"'{file.name}'.\n"
             f"Detail error: {error}"
         ) from error
